@@ -16,15 +16,10 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Serve built React frontend if available, else fall back to static/
+# Serve built React frontend assets
 FRONTEND_DIST = "frontend/dist"
 if os.path.isdir(FRONTEND_DIST):
     app.mount("/assets", StaticFiles(directory=f"{FRONTEND_DIST}/assets"), name="assets")
-else:
-    try:
-        app.mount("/static", StaticFiles(directory="static"), name="static")
-    except Exception:
-        pass
 
 
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp", ".gif")
@@ -34,13 +29,11 @@ PDF_MIMES = {"application/pdf", "application/x-pdf"}
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    for candidate in ("frontend/dist/index.html", "static/index.html"):
-        try:
-            with open(candidate, "r", encoding="utf-8") as f:
-                return f.read()
-        except FileNotFoundError:
-            continue
-    return "<h1>OCR Service</h1><p>POST /ocr/image or /ocr/pdf</p>"
+    try:
+        with open("frontend/dist/index.html", "r", encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        return "<h1>OCR Service</h1><p>Frontend belum di-build. Jalankan: cd frontend && npm run build</p><p>API: POST /ocr/image atau /ocr/pdf</p>"
 
 
 @app.get("/health")
