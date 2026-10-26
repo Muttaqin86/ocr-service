@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from ocr import ocr_image_bytes, ocr_pdf_bytes
+try:
+    from .ocr import ocr_image_bytes, ocr_pdf_bytes
+except ImportError:
+    from ocr import ocr_image_bytes, ocr_pdf_bytes
 
 app = FastAPI(
     title="OCR Service",
@@ -16,10 +20,11 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Serve built React frontend assets
-FRONTEND_DIST = "frontend/dist"
-if os.path.isdir(FRONTEND_DIST):
-    app.mount("/assets", StaticFiles(directory=f"{FRONTEND_DIST}/assets"), name="assets")
+# Serve built React frontend assets (resolved relative to this file's location)
+BASE_DIR = Path(__file__).resolve().parent
+FRONTEND_DIST = BASE_DIR.parent / "frontend" / "dist"
+if FRONTEND_DIST.is_dir():
+    app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="assets")
 
 
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp", ".gif")
@@ -29,8 +34,9 @@ PDF_MIMES = {"application/pdf", "application/x-pdf"}
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
+    index_file = FRONTEND_DIST / "index.html"
     try:
-        with open("frontend/dist/index.html", "r", encoding="utf-8") as f:
+        with open(index_file, "r", encoding="utf-8") as f:
             return f.read()
     except FileNotFoundError:
         return "<h1>OCR Service</h1><p>Frontend belum di-build. Jalankan: cd frontend && npm run build</p><p>API: POST /ocr/image atau /ocr/pdf</p>"

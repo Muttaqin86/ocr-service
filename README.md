@@ -32,7 +32,13 @@ tesseract --version
 ## Menjalankan
 
 ### Backend (FastAPI)
+Dari root repo:
 ```bash
+uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+```
+Atau dari folder backend:
+```bash
+cd backend
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
@@ -49,7 +55,7 @@ Build untuk produksi (output ke `frontend/dist`, disajikan oleh FastAPI):
 cd frontend
 npm run build
 # lalu jalankan backend; root "/" akan memuat React build
-uvicorn main:app --host 0.0.0.0 --port 8000
+uvicorn backend.main:app --host 0.0.0.0 --port 8000
 ```
 
 Buka http://localhost:8000 di browser.
