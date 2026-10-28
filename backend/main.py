@@ -10,9 +10,9 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 try:
-    from .ocr import ocr_image_bytes, ocr_pdf_bytes
+    from .ocr import ocr_image_bytes, ocr_pdf_bytes, ocr_image_with_confidence, validate_lang, available_languages
 except ImportError:
-    from ocr import ocr_image_bytes, ocr_pdf_bytes
+    from ocr import ocr_image_bytes, ocr_pdf_bytes, ocr_image_with_confidence, validate_lang, available_languages
 
 app = FastAPI(
     title="OCR Service",
@@ -42,6 +42,9 @@ async def index():
         return "<h1>OCR Service</h1><p>Frontend belum di-build. Jalankan: cd frontend && npm run build</p><p>API: POST /ocr/image atau /ocr/pdf</p>"
 
 
+@app.get("/languages")
+async def languages():
+    return {"languages": available_languages()}
 @app.get("/health")
 async def health():
     return {"status": "ok"}
@@ -53,6 +56,11 @@ async def ocr_image(
     file: UploadFile = File(...),
     lang: str = Form("eng"),
     psm: int = Form(6),
+    oem: int = Form(3),
+    preprocess: bool = Form(True),
+    scale: float = Form(2.0),
+    deskew: bool = Form(True),
+    binarize: bool = Form(False),
 ):
     name = (file.filename or "").lower()
     if file.content_type not in IMAGE_MIMES and not name.endswith(IMAGE_EXTS):
@@ -63,7 +71,15 @@ async def ocr_image(
         raise HTTPException(status_code=400, detail="Empty file")
 
     try:
-        text = ocr_image_bytes(data, lang=lang, psm=psm)
+        validate_lang(lang)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    try:
+        text, conf = ocr_image_with_confidence(
+            data, lang=lang, psm=psm, oem=oem,
+            preprocess=preprocess, scale=scale, deskew=deskew, binarize=binarize,
+        )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"OCR failed: {exc}")
 
@@ -73,6 +89,7 @@ async def ocr_image(
             "language": lang,
             "text": text,
             "char_count": len(text),
+            "confidence": round(conf, 2),
         }
     )
 @app.post("/ocr/pdf")
@@ -81,6 +98,10 @@ async def ocr_pdf(
     lang: str = Form("eng"),
     dpi: int = Form(200),
     force_ocr: bool = Form(False),
+    preprocess: bool = Form(True),
+    scale: float = Form(2.0),
+    deskew: bool = Form(True),
+    binarize: bool = Form(False),
 ):
     name = (file.filename or "").lower()
     if file.content_type not in PDF_MIMES and not name.endswith(".pdf"):
@@ -91,7 +112,15 @@ async def ocr_pdf(
         raise HTTPException(status_code=400, detail="Empty file")
 
     try:
-        result = ocr_pdf_bytes(data, lang=lang, dpi=dpi, force_ocr=force_ocr)
+        validate_lang(lang)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    try:
+        result = ocr_pdf_bytes(
+            data, lang=lang, dpi=dpi, force_ocr=force_ocr,
+            preprocess=preprocess, scale=scale, deskew=deskew, binarize=binarize,
+        )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"PDF processing failed: {exc}")
 
@@ -106,6 +135,7 @@ async def ocr_pdf(
                     "page": p.page,
                     "method": p.method,
                     "char_count": p.char_count,
+                    "confidence": round(p.confidence, 2),
                     "text": p.text,
                 }
                 for p in result.pages
@@ -121,6 +151,11 @@ async def ocr_auto(
     dpi: int = Form(200),
     force_ocr: bool = Form(False),
     psm: int = Form(6),
+    oem: int = Form(3),
+    preprocess: bool = Form(True),
+    scale: float = Form(2.0),
+    deskew: bool = Form(True),
+    binarize: bool = Form(False),
 ):
     name = (file.filename or "").lower()
     ctype = file.content_type or ""
@@ -128,9 +163,17 @@ async def ocr_auto(
     if not data:
         raise HTTPException(status_code=400, detail="Empty file")
 
+    try:
+        validate_lang(lang)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
     if ctype in PDF_MIMES or name.endswith(".pdf"):
         try:
-            result = ocr_pdf_bytes(data, lang=lang, dpi=dpi, force_ocr=force_ocr)
+            result = ocr_pdf_bytes(
+                data, lang=lang, dpi=dpi, force_ocr=force_ocr,
+                preprocess=preprocess, scale=scale, deskew=deskew, binarize=binarize,
+            )
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"PDF processing failed: {exc}")
         fname = file.filename or "document.pdf"
@@ -140,7 +183,10 @@ async def ocr_auto(
                 "language": result.language,
                 "total_chars": result.total_chars,
                 "pages": [
-                    {"page": p.page, "method": p.method, "char_count": p.char_count, "text": p.text}
+                    {
+                        "page": p.page, "method": p.method, "char_count": p.char_count,
+                        "confidence": round(p.confidence, 2), "text": p.text,
+                    }
                     for p in result.pages
                 ],
             }
@@ -148,11 +194,14 @@ async def ocr_auto(
 
     # image
     try:
-        text = ocr_image_bytes(data, lang=lang, psm=psm)
+        text, conf = ocr_image_with_confidence(
+            data, lang=lang, psm=psm, oem=oem,
+            preprocess=preprocess, scale=scale, deskew=deskew, binarize=binarize,
+        )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"OCR failed: {exc}")
     return JSONResponse(
-        {"filename": file.filename, "language": lang, "text": text, "char_count": len(text)}
+        {"filename": file.filename, "language": lang, "text": text, "char_count": len(text), "confidence": round(conf, 2)}
     )
 
 

@@ -4,3 +4,4 @@ pytesseract>=0.3.10
 pymupdf>=1.24
 pillow>=10.0
 python-multipart>=0.0.9
+numpy>=1.24

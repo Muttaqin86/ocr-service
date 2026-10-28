@@ -20,7 +20,7 @@ Aplikasi OCR (Optical Character Recognition) untuk mengekstrak teks dari gambar 
 
 ```bash
 cd /Users/muttaqin/Documents/Workspace/Xperiments/ocr
-pip install -r requirements.txt
+pip install -r backend/requirements.txt
 ```
 
 Pastikan `tesseract` tersedia di PATH:
@@ -79,6 +79,21 @@ curl -X POST http://localhost:8000/ocr/pdf -F "file=@dokumen.pdf" -F "lang=eng" 
 ```bash
 curl -X POST http://localhost:8000/ocr -F "file=@file"
 ```
+
+## Penyempurnaan OCR (baru)
+
+Endpoint `/ocr/image`, `/ocr/pdf`, `/ocr` sekarang menerima parameter tambahan untuk meningkatkan akurasi:
+
+- `preprocess` (bool, default true) — pipeline: perbaiki orientasi EXIF, grayscale, upscale gambar kecil, luruskan (deskew), auto-contrast, penajaman, kontras, (opsional) binarisasi.
+- `deskew` (bool, default true) — luruskan halaman miring.
+- `binarize` (bool, default false) — konversi ke hitam/putih (Otsu). Matikan untuk pencahayaan tidak merata (biarkan Tesseract menangani).
+- `scale` (float, default 2.0) — faktor upscale untuk gambar kecil (Tesseract optimal ~300 DPI).
+- `oem` (int, default 3) — engine mode Tesseract (0 legacy, 1 LSTM, 2 gabungan, 3 default).
+- `psm` (int, default 6) — page segmentation mode.
+
+Respons sekarang menyertakan `confidence` (0–100) per hasil/gambar dan per halaman PDF.
+
+Daftar bahasa terpasang: `GET /languages`. Validasi bahasa dilakukan otomatis; jika paket bahasa belum terpasang (mis. `ind`), API mengembalikan 400 dengan petunjuk instalasi.
 
 ## Catatan
 
