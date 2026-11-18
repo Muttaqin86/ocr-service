@@ -5,3 +5,5 @@ pymupdf>=1.24
 pillow>=10.0
 python-multipart>=0.0.9
 numpy>=1.24
+# Optional for AI OCR (EasyOCR - deep learning)
+# easyocr>=1.7.0  # uncomment jika ingin menggunakan AI OCR; membutuhkan torch

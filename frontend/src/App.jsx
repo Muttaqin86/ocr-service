@@ -17,11 +17,23 @@ export default function App() {
   const [langs, setLangs] = useState([])
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
+  const [resultType, setResultType] = useState(null) // 'ocr' | 'ai'
   const [toast, setToast] = useState(null)
   const inputRef = useRef(null)
 
+  // ========== AI OCR STATE ==========
+  const [activeTab, setActiveTab] = useState('ocr') // 'ocr' | 'ai'
+  const [aiFile, setAiFile] = useState(null)
+  const [aiDrag, setAiDrag] = useState(false)
+  const [aiLang, setAiLang] = useState('en')
+  const [aiLangs, setAiLangs] = useState([])
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiResult, setAiResult] = useState(null)
+  const aiInputRef = useRef(null)
+
   useEffect(() => {
     fetch('/languages').then(r => r.json()).then(d => setLangs(d.languages || [])).catch(() => {})
+    fetch('/ai/languages').then(r => r.json()).then(d => setAiLangs(d.languages || [])).catch(() => {})
   }, [])
 
   const showToast = (msg, ok = false) => {
@@ -115,14 +127,106 @@ export default function App() {
     URL.revokeObjectURL(url)
   }
 
-  const reset = () => { setFile(null); setResult(null); if (inputRef.current) inputRef.current.value = '' }
+  const reset = () => { setFile(null); setResult(null); setResultType(null); if (inputRef.current) inputRef.current.value = '' }
 
+  // ========== AI OCR FUNCTIONS ==========
+  const pickAiFile = useCallback((f) => {
+    if (!f) return
+    setAiFile(f)
+    setAiResult(null)
+  }, [])
 
-// placeholder
+  const onAiDrop = (e) => {
+    e.preventDefault()
+    setAiDrag(false)
+    const f = e.dataTransfer.files?.[0]
+    pickAiFile(f)
+  }
+
+  const submitAi = async (e) => {
+    e?.preventDefault()
+    if (!aiFile) { showToast('Pilih file dulu'); return }
+    setAiLoading(true)
+    setAiResult(null)
+    const fd = new FormData()
+    fd.append('file', aiFile)
+    fd.append('lang', aiLang)
+    const pdf = isPdf(aiFile)
+    const endpoint = pdf ? '/ocr/ai/pdf' : '/ocr/ai/image'
+    try {
+      const res = await fetch(endpoint, { method: 'POST', body: fd })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || 'Gagal memproses')
+      setAiResult({ pdf, data })
+      showToast('AI Selesai', true)
+    } catch (err) {
+      showToast(err.message)
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
+  const copyAiText = async () => {
+    let text = ''
+    if (aiResult.pdf) text = aiResult.data.pages.map(p => `--- Halaman ${p.page} ---\n${p.text}`).join('\n\n')
+    else text = aiResult.data.text
+    try {
+      await navigator.clipboard.writeText(text)
+      showToast('Teks AI disalin', true)
+    } catch {
+      showToast('Gagal menyalin')
+    }
+  }
+
+  const downloadAiText = () => {
+    let text = ''
+    if (aiResult.pdf) text = aiResult.data.pages.map(p => `--- Halaman ${p.page} ---\n${p.text}`).join('\n\n')
+    else text = aiResult.data.text
+    const blob = new Blob([text], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = (aiFile?.name || 'hasil-ai') + '.txt'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const downloadAiJson = () => {
+    const blob = new Blob([JSON.stringify(aiResult.data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = (aiFile?.name || 'hasil-ai') + '.json'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const resetAi = () => { setAiFile(null); setAiResult(null); if (aiInputRef.current) aiInputRef.current.value = '' }
+
+  const currentResult = activeTab === 'ocr' ? result : aiResult
+  const currentLoading = activeTab === 'ocr' ? loading : aiLoading
+
   return (
     <div className="container">
-      <h1>OCR Service</h1>
-      <p className="subtitle">Ekstrak teks dari gambar atau PDF (termasuk PDF scan) dengan Tesseract + PyMuPDF.</p>
+      <div className="tabs">
+        <button
+          className={activeTab === 'ocr' ? 'tab-active' : ''}
+          onClick={() => setActiveTab('ocr')}
+        >
+          📄 OCR (Tesseract)
+        </button>
+        <button
+          className={activeTab === 'ai' ? 'tab-active' : ''}
+          onClick={() => setActiveTab('ai')}
+        >
+          🤖 OCR AI
+        </button>
+      </div>
+
+      {activeTab === 'ocr' && (
+        <>
+          <h1>OCR Service</h1>
+          <p className="subtitle">Ekstrak teks dari gambar atau PDF (termasuk PDF scan) dengan Tesseract + PyMuPDF.</p>
 
       <div className="card">
         <div
@@ -235,9 +339,9 @@ export default function App() {
         </div>
       )}
 
-      {result && (
+          {activeTab === 'ocr' && result && (
         <div className="card">
-          <h3>Hasil</h3>
+          <h3>Hasil OCR</h3>
           <div>
             <strong>{result.data.filename}</strong>
             {result.pdf ? (
@@ -267,6 +371,101 @@ export default function App() {
             <button className="secondary" onClick={downloadJson}>Download .json</button>
           </div>
         </div>
+      )}
+        </>
+      )}
+
+      {activeTab === 'ai' && (
+        <>
+          <h1>OCR AI</h1>
+          <p className="subtitle">Ekstrak teks menggunakan AI (EasyOCR / Deep Learning). Cocok untuk tulisan tangan dan teks bervariasi.</p>
+
+          <div className="card">
+            <div
+              className={`dropzone ${aiDrag ? 'drag' : ''} ${aiFile ? 'has-file' : ''}`}
+              onDragOver={(e) => { e.preventDefault(); setAiDrag(true) }}
+              onDragLeave={() => setAiDrag(false)}
+              onDrop={onAiDrop}
+              onClick={() => aiInputRef.current?.click()}
+            >
+              {aiFile ? (
+                <>
+                  <strong>{aiFile.name}</strong>
+                  <div className="fileinfo">{(aiFile.size / 1024).toFixed(1)} KB · {aiFile.type || 'unknown'}</div>
+                </>
+              ) : (
+                <>
+                  <div>Seret & lepas file di sini</div>
+                  <div className="fileinfo">atau klik untuk memilih (gambar/PDF)</div>
+                </>
+              )}
+            </div>
+            <input
+              ref={aiInputRef}
+              type="file"
+              accept="image/*,.pdf"
+              style={{ display: 'none' }}
+              onChange={(e) => pickAiFile(e.target.files?.[0])}
+            />
+
+            <div className="row" style={{ marginTop: 14 }}>
+              <div>
+                <label>Bahasa (lang)</label>
+                <input value={aiLang} onChange={(e) => setAiLang(e.target.value)} placeholder="en" list="ailanglist" />
+                <datalist id="ailanglist">{aiLangs.map(l => <option key={l} value={l} />)}</datalist>
+                {aiLangs.length > 0 && <div className="fileinfo">Tersedia: {aiLangs.join(', ')}</div>}
+              </div>
+            </div>
+
+            <div className="actions" style={{ marginTop: 14 }}>
+              <button onClick={submitAi} disabled={aiLoading || !aiFile}>
+                {aiLoading && <span className="spinner" />}
+                {aiLoading ? 'Memproses AI...' : 'Proses AI'}
+              </button>
+              <button className="secondary" onClick={resetAi} disabled={aiLoading}>Reset</button>
+            </div>
+          </div>
+
+          {aiFile && !isPdf(aiFile) && (
+            <div className="card preview">
+              <img src={URL.createObjectURL(aiFile)} alt="preview" />
+            </div>
+          )}
+
+          {aiResult && (
+            <div className="card">
+              <h3>Hasil OCR AI</h3>
+              <div>
+                <strong>{aiResult.data.filename}</strong>
+                {aiResult.pdf ? (
+                  <span className="badge">{aiResult.data.pages.length} halaman · {aiResult.data.total_chars} char</span>
+                ) : (
+                  <span className="badge">{aiResult.data.char_count} char{aiResult.data.confidence != null ? ` · conf ${aiResult.data.confidence}%` : ''}</span>
+                )}
+              </div>
+
+              {aiResult.pdf ? (
+                aiResult.data.pages.map((p) => (
+                  <div className="page" key={p.page}>
+                    <h4>
+                      Halaman {p.page}
+                      <span className="badge">{p.method || 'ai'} · {p.char_count} char{p.confidence != null ? ` · conf ${p.confidence}%` : ''}</span>
+                    </h4>
+                    <pre>{p.text || '(kosong)'}</pre>
+                  </div>
+                ))
+              ) : (
+                <pre style={{ marginTop: 12 }}>{aiResult.data.text || '(kosong)'}</pre>
+              )}
+
+              <div className="actions">
+                <button className="secondary" onClick={copyAiText}>Copy teks</button>
+                <button className="secondary" onClick={downloadAiText}>Download .txt</button>
+                <button className="secondary" onClick={downloadAiJson}>Download .json</button>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {toast && <div className={`toast ${toast.ok ? 'ok' : ''}`}>{toast.msg}</div>}

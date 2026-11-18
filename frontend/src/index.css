@@ -1,3 +1,29 @@
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 10px;
+}
+.tabs button {
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 10px 16px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: .2s;
+}
+.tabs button:hover {
+  color: var(--text);
+}
+.tabs button.tab-active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
 :root {
   --bg: #0b1220;
   --card: #141c2f;

@@ -11,8 +11,10 @@ from fastapi.staticfiles import StaticFiles
 
 try:
     from .ocr import ocr_image_bytes, ocr_pdf_bytes, ocr_image_with_confidence, validate_lang, available_languages
+    from .ai_ocr import ocr_image_bytes as ai_ocr_image_bytes, ocr_pdf_bytes as ai_ocr_pdf_bytes, validate_lang as ai_validate_lang, available_languages as ai_available_languages
 except ImportError:
     from ocr import ocr_image_bytes, ocr_pdf_bytes, ocr_image_with_confidence, validate_lang, available_languages
+    from ai_ocr import ocr_image_bytes as ai_ocr_image_bytes, ocr_pdf_bytes as ai_ocr_pdf_bytes, validate_lang as ai_validate_lang, available_languages as ai_available_languages
 
 app = FastAPI(
     title="OCR Service",
@@ -205,6 +207,105 @@ async def ocr_auto(
     )
 
 
+@app.get("/ai/languages")
+async def ai_languages():
+    return {"languages": ai_available_languages()}
+
+
+@app.post("/ocr/ai/image")
+async def ocr_ai_image(
+    file: UploadFile = File(...),
+    lang: str = Form("en"),
+    preprocess: bool = Form(True),
+    scale: float = Form(2.0),
+    deskew: bool = Form(True),
+    binarize: bool = Form(False),
+):
+    name = (file.filename or "").lower()
+    IMAGE_MIMES = {"image/png", "image/jpeg", "image/jpg", "image/tiff", "image/bmp", "image/webp", "image/gif"}
+    IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp", ".gif")
+    if file.content_type not in IMAGE_MIMES and not name.endswith(IMAGE_EXTS):
+        raise HTTPException(status_code=400, detail="Unsupported image type")
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty file")
+
+    try:
+        ai_validate_lang(lang)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    try:
+        text, conf = ai_ocr_image_bytes(
+            data, lang=lang,
+            preprocess=preprocess, scale=scale, deskew=deskew, binarize=binarize,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"AI OCR failed: {exc}")
+
+    return JSONResponse(
+        {
+            "filename": file.filename,
+            "language": lang,
+            "text": text,
+            "char_count": len(text),
+            "confidence": round(conf, 2),
+        }
+    )
+
+
+@app.post("/ocr/ai/pdf")
+async def ocr_ai_pdf(
+    file: UploadFile = File(...),
+    lang: str = Form("en"),
+    dpi: int = Form(200),
+    force_ocr: bool = Form(False),
+    preprocess: bool = Form(True),
+    scale: float = Form(2.0),
+    deskew: bool = Form(True),
+    binarize: bool = Form(False),
+):
+    name = (file.filename or "").lower()
+    PDF_MIMES = {"application/pdf", "application/x-pdf"}
+    if file.content_type not in PDF_MIMES and not name.endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Unsupported file type (expected PDF)")
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty file")
+
+    try:
+        ai_validate_lang(lang)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    try:
+        result = ai_ocr_pdf_bytes(
+            data, lang=lang, dpi=dpi, force_ocr=force_ocr,
+            preprocess=preprocess, scale=scale, deskew=deskew, binarize=binarize,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"AI PDF processing failed: {exc}")
+
+    fname = file.filename or "document.pdf"
+    return JSONResponse(
+        {
+            "filename": fname,
+            "language": result.language,
+            "total_chars": result.total_chars,
+            "pages": [
+                {
+                    "page": p.page,
+                    "method": p.method,
+                    "char_count": p.char_count,
+                    "confidence": round(p.confidence, 2),
+                    "text": p.text,
+                }
+                for p in result.pages
+            ],
+        }
+    )
 
 
 
